@@ -1,0 +1,219 @@
+<!-- 
+  Project: Image Splitter 100x100
+  File: index.html
+  Version: 1.0.4
+-->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#4a90d9">
+    <meta name="description" content="Нарезка изображений на части 100x100 пикселей">
+    <meta name="color-scheme" content="light dark">
+    <title>Нарезка изображений — Telegram Mini App</title>
+
+    <!-- Telegram Mini Apps API. Приложение также работает в обычном браузере. -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
+    <link rel="manifest" href="manifest.json?v=1.0.4">
+    <link rel="apple-touch-icon" href="icon-192.png?v=1.0.4">
+    <link rel="stylesheet" href="styles.css?v=1.0.4">
+</head>
+<body>
+    <div class="container">
+        <h1>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+            Image Splitter
+        </h1>
+        <p class="subtitle">Нарезка изображений на части 100×100 пикселей</p>
+
+        <div class="info">
+            <strong>💡 Важно:</strong> Все части будут ровно 100×100 пикселей. 
+            Изображение можно перемещать, масштабировать и вращать. Отступы настраиваются.
+        </div>
+
+        <div class="offline-indicator" id="offlineIndicator" style="display: none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.58 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+            Оффлайн режим
+        </div>
+
+        <div class="upload-section">
+            <div class="upload-area" id="uploadArea">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <p>Нажмите или перетащите изображение сюда</p>
+                <p style="font-size: 0.8em; color: #999; margin-top: 10px;">
+                    Поддерживаются: JPG, PNG, WebP
+                </p>
+            </div>
+            <input type="file" id="fileInput" accept="image/*">
+
+            <div class="image-editor" id="imageEditor" style="display: none;">
+                <div class="editor-toolbar">
+                    <button class="tool-btn" id="zoomOutBtn" title="Уменьшить на 5%">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                    <div class="zoom-control">
+                        <input type="number" id="zoomInput" class="zoom-input" value="100" min="10" max="500" step="5">
+                        <span class="zoom-percent">%</span>
+                    </div>
+                    <button class="tool-btn" id="zoomInBtn" title="Увеличить на 5%">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                    <button class="tool-btn" id="resetViewBtn" title="Сбросить вид">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                    </button>
+                    <button class="tool-btn" id="changeImageBtn" title="Заменить изображение">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                    </button>
+                </div>
+                <div class="canvas-container" id="canvasContainer">
+                    <canvas id="editCanvas"></canvas>
+                    <div class="grid-overlay" id="gridOverlay"></div>
+                </div>
+                
+                <div class="rotation-panel">
+                    <label class="rotation-label">Вращение:</label>
+                    <div class="rotation-controls">
+                        <button class="tool-btn-small" id="rotateLeft90" title="Повернуть на -90°">-90°</button>
+                        <input type="range" id="rotationSlider" min="-180" max="180" value="0" step="1">
+                        <button class="tool-btn-small" id="rotateRight90" title="Повернуть на +90°">+90°</button>
+                        <button class="tool-btn-small" id="resetRotation" title="Сбросить вращение">0°</button>
+                    </div>
+                    <span id="rotationValue" class="rotation-value">0°</span>
+                </div>
+                
+                <div class="editor-hint">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 5px;"><rect x="6" y="3" width="12" height="18" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                    Перетаскивайте для перемещения • Колесико/щипок для масштабирования
+                </div>
+            </div>
+        </div>
+
+        <div class="controls" id="controls">
+            <div class="control-group">
+                <label for="gridSize">Размер сетки:</label>
+                <select id="gridSize">
+                    <option value="1">1 × 1 (1 часть — преобразовать в 100×100)</option>
+                    <option value="2">2 × 2 (4 части)</option>
+                    <option value="3">3 × 3 (9 частей)</option>
+                    <option value="4">4 × 4 (16 частей)</option>
+                    <option value="5">5 × 5 (25 частей)</option>
+                    <option value="6">6 × 6 (36 частей)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Или укажите свой размер:</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <input type="number" id="customRows" placeholder="Строки" min="1" max="10" value="2">
+                    <input type="number" id="customCols" placeholder="Столбцы" min="1" max="10" value="2">
+                </div>
+                <label style="margin-top: 10px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="useCustomGrid">
+                    <span>Использовать свой размер</span>
+                </label>
+            </div>
+
+            <div class="control-group">
+                <label>Базовые отступы (пиксели):</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div>
+                        <label style="font-size: 0.9em; font-weight: 500; color: #666;">Между строками:</label>
+                        <input type="number" id="rowPaddingInput" min="0" max="50" step="1" value="5">
+                    </div>
+                    <div>
+                        <label style="font-size: 0.9em; font-weight: 500; color: #666;">Между столбцами:</label>
+                        <input type="number" id="colPaddingInput" min="0" max="50" step="1" value="5">
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div>
+                        <label style="font-size: 0.9em; font-weight: 500; color: #666;">Направление для строк:</label>
+                        <select id="rowPaddingDirection">
+                            <option value="between">Между строками</option>
+                            <option value="top">Только сверху</option>
+                            <option value="bottom">Только снизу</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size: 0.9em; font-weight: 500; color: #666;">Направление для столбцов:</label>
+                        <select id="colPaddingDirection">
+                            <option value="between">Между столбцами</option>
+                            <option value="left">Только слева</option>
+                            <option value="right">Только справа</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="detailed-paddings" id="detailedPaddings" style="display: none;">
+                    <div class="padding-section">
+                        <label class="padding-section-title">Детальные отступы между строками:</label>
+                        <div id="rowPaddings" class="padding-inputs"></div>
+                        <label style="margin-top: 10px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="useDetailedRowPaddings">
+                            <span>Использовать детальные настройки для строк</span>
+                        </label>
+                    </div>
+                    <div class="padding-section">
+                        <label class="padding-section-title">Детальные отступы между столбцами:</label>
+                        <div id="colPaddings" class="padding-inputs"></div>
+                        <label style="margin-top: 10px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="useDetailedColPaddings">
+                            <span>Использовать детальные настройки для столбцов</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <label style="margin-top: 10px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="useDetailedPaddings">
+                    <span>Показать детальные настройки</span>
+                </label>
+            </div>
+
+            <div class="control-group smoothing-group">
+                <div class="smoothing-header">
+                    <span class="smoothing-title">Сглаживание (антиалиасинг)</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="smoothingToggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="smoothing-status" id="smoothingStatus">
+                    <span class="status-indicator on">✓ Включено</span>
+                    <span class="status-indicator off" style="display: none;">✗ Выключено</span>
+                </div>
+                <small style="color: #999; margin-top: 8px; display: block;">
+                    Включите для плавных краёв, выключите для чётких пикселей
+                </small>
+            </div>
+
+            <button class="btn" id="splitBtn" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+                Нарезать изображение
+            </button>
+        </div>
+
+        <div class="preview-section" id="previewSection">
+            <h2>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                Результат нарезки:
+            </h2>
+            <div class="preview-hint">
+                Отметьте галочками части, которые нужно скачать
+            </div>
+            <div class="grid-preview" id="gridPreview"></div>
+            
+            <div class="download-buttons">
+                <button class="btn download-png" id="downloadPngBtn" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Скачать выбранные части (PNG)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js?v=1.0.4"></script>
+</body>
+</html>
