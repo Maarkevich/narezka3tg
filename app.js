@@ -1,7 +1,7 @@
 /**
  * Project: Narezka3TG — Telegram Mini App
  * File: app.js
- * Version: 1.0.4
+ * Version: 1.1.0
  */
 
 // Telegram Mini Apps API. В обычном браузере приложение продолжает работать.
@@ -106,6 +106,122 @@ const resetRotationBtn = document.getElementById('resetRotation');
 const smoothingToggle = document.getElementById('smoothingToggle');
 const smoothingStatus = document.getElementById('smoothingStatus');
 const offlineIndicator = document.getElementById('offlineIndicator');
+const sendToBotBtn = document.getElementById('sendToBotBtn');
+const createPackBtn = document.getElementById('createPackBtn');
+const addToPackBtn = document.getElementById('addToPackBtn');
+const packForm = document.getElementById('packForm');
+const packTitleInput = document.getElementById('packTitleInput');
+const packShortNameInput = document.getElementById('packShortNameInput');
+const existingPackInput = document.getElementById('existingPackInput');
+const openPackBotBtn = document.getElementById('openPackBotBtn');
+
+const BOT_USERNAME = 'narezkaimagebot';
+const BACKEND_URL = window.NAREZKA_BACKEND_URL || '';
+
+function getSelectedImages() {
+    const selected = new Set();
+    gridPreview.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        if (cb.checked) selected.add(Number(cb.dataset.index));
+    });
+    return splitImages.filter(image => selected.has(image.index));
+}
+
+function selectedFiles() {
+    return getSelectedImages().map(image => new File(
+        [dataUrlToBytes(image.dataUrl)], image.name, { type: 'image/png' }
+    ));
+}
+
+function telegramUserId() {
+    return tg?.initDataUnsafe?.user?.id || null;
+}
+
+async function callBackend(path, payload) {
+    if (!BACKEND_URL) {
+        throw new Error('BACKEND_NOT_CONFIGURED');
+    }
+    const response = await fetch(`${BACKEND_URL.replace(/\/$/, '')}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            initData: tg?.initData || '',
+            userId: telegramUserId(),
+            ...payload
+        })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.ok) throw new Error(result.error || `HTTP_${response.status}`);
+    return result;
+}
+
+function showPackForm(mode) {
+    packForm.hidden = false;
+    packForm.dataset.mode = mode;
+    if (mode === 'create') {
+        packTitleInput.focus();
+        packShortNameInput.placeholder = `my_pack_by_${BOT_USERNAME}`;
+    } else {
+        existingPackInput.focus();
+    }
+    packForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function normalizePackName(value) {
+    value = value.trim().replace(/^https?:\/\/t\.me\/addemoji\//i, '').replace(/^https?:\/\/t\.me\/addstickers\//i, '');
+    value = value.replace(/[^A-Za-z0-9_]/g, '_').replace(/_+/g, '_');
+    if (!value.startsWith('narezka_')) value = `narezka_${value}`;
+    if (!value.endsWith(`_by_${BOT_USERNAME}`)) value += `_by_${BOT_USERNAME}`;
+    return value.slice(0, 64);
+}
+
+async function sendSelectedToBot() {
+    const files = selectedFiles();
+    if (!files.length) return tgShowAlert('Выберите хотя бы одну часть.');
+    if (!BACKEND_URL) return tgShowAlert('Отправка в чат требует backend бота. Укажите NAREZKA_BACKEND_URL в настройках сборки.');
+    sendToBotBtn.disabled = true;
+    try {
+        await callBackend('/api/send-images', { files: await filesToBase64(files) });
+        tgShowAlert('Выбранные изображения отправлены в чат с ботом.');
+    } catch (error) {
+        tgShowAlert(`Не удалось отправить изображения: ${error.message}`);
+    } finally { sendToBotBtn.disabled = false; }
+}
+
+async function filesToBase64(files) {
+    return Promise.all(files.map(async file => ({
+        name: file.name,
+        data: await fileToDataUrl(file)
+    })));
+}
+
+function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+async function createOrAddPack(mode) {
+    const files = selectedFiles();
+    if (!files.length) return tgShowAlert('Выберите хотя бы одну часть.');
+    if (!BACKEND_URL) return tgShowAlert('Создание PAC emoji требует backend бота и токена Bot API.');
+    const packName = mode === 'create' ? normalizePackName(packShortNameInput.value || 'narezka') : existingPackInput.value.trim();
+    if (!packName) return tgShowAlert('Укажите имя существующего набора.');
+    const title = `${(packTitleInput.value.trim() || 'Нарезка изображений').slice(0, 50)} @${BOT_USERNAME}`;
+    packForm.hidden = true;
+    try {
+        const result = await callBackend(mode === 'create' ? '/api/create-emoji-pack' : '/api/add-to-emoji-pack', {
+            title, packName, files: await filesToBase64(files), emoji: '🙂'
+        });
+        if (result.url && tg?.openTelegramLink) tg.openTelegramLink(result.url);
+        else if (result.url) window.open(result.url, '_blank');
+        tgShowAlert('Набор обработан. Открывается ссылка добавления в Telegram.');
+    } catch (error) {
+        tgShowAlert(`Не удалось обработать набор: ${error.message}`);
+    }
+}
 
 function init() {
     setupTelegramApp();
@@ -250,6 +366,14 @@ function setupEventListeners() {
     downloadPngBtn.addEventListener('click', () => {
         tgHaptic('light');
         downloadAllAsPng();
+    });
+    sendToBotBtn.addEventListener('click', () => { tgHaptic('medium'); sendSelectedToBot(); });
+    createPackBtn.addEventListener('click', () => { tgHaptic('medium'); showPackForm('create'); });
+    addToPackBtn.addEventListener('click', () => { tgHaptic('medium'); showPackForm('add'); });
+    openPackBotBtn.addEventListener('click', () => {
+        const mode = packForm.dataset.mode || 'create';
+        if (mode === 'create') createOrAddPack('create');
+        else createOrAddPack('add');
     });
     
     gridSize.addEventListener('change', () => { updateGrid(); if (useDetailedPaddings) createDetailedPaddingInputs(); });
@@ -591,6 +715,9 @@ function splitImage() {
     }
     
     downloadPngBtn.disabled = false;
+    sendToBotBtn.disabled = false;
+    createPackBtn.disabled = false;
+    addToPackBtn.disabled = false;
     updateGridPreviewGap();
     previewSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -725,7 +852,10 @@ async function downloadAllAsPng() {
 
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').catch(err => console.error('SW error:', err));
+        navigator.serviceWorker.register('./sw.js?v=1.1.0').then(registration => {
+            if (registration.waiting) registration.waiting.postMessage('SKIP_WAITING');
+            registration.update().catch(() => {});
+        }).catch(err => console.error('SW error:', err));
     });
 }
 
