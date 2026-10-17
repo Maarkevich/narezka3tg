@@ -595,51 +595,132 @@ function splitImage() {
     previewSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+function dataUrlToBytes(dataUrl) {
+    const base64 = dataUrl.split(',')[1];
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+}
+
+function crc32(bytes) {
+    let crc = 0xffffffff;
+    for (let i = 0; i < bytes.length; i++) {
+        crc ^= bytes[i];
+        for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+}
+
+function put32(view, offset, value) {
+    view.setUint32(offset, value >>> 0, true);
+}
+
+// ZIP без внешних библиотек: один файл вместо серии блокируемых загрузок.
+function makeZip(files) {
+    const localParts = [];
+    const centralParts = [];
+    let offset = 0;
+    const encoder = new TextEncoder();
+
+    files.forEach(file => {
+        const name = encoder.encode(file.name);
+        const data = dataUrlToBytes(file.dataUrl);
+        const crc = crc32(data);
+        const local = new Uint8Array(30 + name.length);
+        const lv = new DataView(local.buffer);
+        put32(lv, 0, 0x04034b50);
+        lv.setUint16(4, 20, true);
+        lv.setUint16(6, 0, true);
+        lv.setUint16(8, 0, true);
+        lv.setUint16(10, 0, true);
+        lv.setUint16(12, 0, true);
+        put32(lv, 14, crc);
+        put32(lv, 18, data.length);
+        put32(lv, 22, data.length);
+        lv.setUint16(26, name.length, true);
+        local.set(name, 30);
+        localParts.push(local, data);
+
+        const central = new Uint8Array(46 + name.length);
+        const cv = new DataView(central.buffer);
+        put32(cv, 0, 0x02014b50);
+        cv.setUint16(4, 20, true);
+        cv.setUint16(6, 20, true);
+        cv.setUint16(8, 0, true);
+        cv.setUint16(10, 0, true);
+        cv.setUint16(12, 0, true);
+        cv.setUint16(14, 0, true);
+        put32(cv, 16, crc);
+        put32(cv, 20, data.length);
+        put32(cv, 24, data.length);
+        cv.setUint16(28, name.length, true);
+        cv.setUint16(30, 0, true);
+        cv.setUint16(32, 0, true);
+        cv.setUint16(34, 0, true);
+        cv.setUint16(36, 0, true);
+        put32(cv, 38, 0);
+        put32(cv, 42, offset);
+        central.set(name, 46);
+        centralParts.push(central);
+        offset += local.length + data.length;
+    });
+
+    const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+    const end = new Uint8Array(22);
+    const ev = new DataView(end.buffer);
+    put32(ev, 0, 0x06054b50);
+    ev.setUint16(8, files.length, true);
+    ev.setUint16(10, files.length, true);
+    put32(ev, 12, centralSize);
+    put32(ev, 16, offset);
+
+    return new Blob([...localParts, ...centralParts, end], { type: 'application/zip' });
+}
+
+function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+        link.remove();
+        URL.revokeObjectURL(url);
+    }, 2000);
+}
+
 async function downloadAllAsPng() {
     if (splitImages.length === 0) return;
-
     const checkboxes = gridPreview.querySelectorAll('input[type="checkbox"]');
     const selectedIndices = new Set();
     checkboxes.forEach(cb => { if (cb.checked) selectedIndices.add(parseInt(cb.dataset.index)); });
 
     if (selectedIndices.size === 0) {
-        alert('Пожалуйста, выберите хотя бы одну часть для скачивания!');
+        tgShowAlert('Пожалуйста, выберите хотя бы одну часть для скачивания!');
         return;
     }
 
     const selectedImages = splitImages.filter(img => selectedIndices.has(img.index));
+    const files = selectedImages.map(img => new File([dataUrlToBytes(img.dataUrl)], img.name, { type: 'image/png' }));
 
+    // Сначала предлагаем системное меню Telegram/Android — там можно выбрать «Сохранить».
     if (navigator.share && navigator.canShare) {
         try {
-            const files = [];
-            for (const img of selectedImages) {
-                const byteString = atob(img.dataUrl.split(',')[1]);
-                const mimeString = img.dataUrl.split(',')[0].split(':')[1].split(';')[0];
-                const ab = new ArrayBuffer(byteString.length);
-                const ia = new Uint8Array(ab);
-                for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
-                files.push(new File([ab], img.name, { type: mimeString }));
-            }
             if (navigator.canShare({ files })) {
-                await navigator.share({ files: files, title: 'Нарезанные изображения' });
+                await navigator.share({ files, title: 'Нарезанные изображения' });
                 return;
             }
         } catch (err) {
-            console.log('Share API failed, falling back to standard download', err);
+            if (err && err.name === 'AbortError') return;
         }
     }
 
-    alert('Нажмите "Разрешить", если браузер спросит разрешение на скачивание нескольких файлов.');
-    for (let i = 0; i < selectedImages.length; i++) {
-        const img = selectedImages[i];
-        const link = document.createElement('a');
-        link.download = img.name;
-        link.href = img.dataUrl;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        if (i < selectedImages.length - 1) await new Promise(resolve => setTimeout(resolve, 500));
-    }
+    // В Telegram WebView множественные загрузки блокируются. ZIP загружается одним файлом.
+    downloadBlob(makeZip(selectedImages), 'narezka-100x100.zip');
+    tgShowAlert('Архив подготовлен. Если загрузка не началась, откройте приложение в браузере через меню Telegram.');
 }
 
 if ('serviceWorker' in navigator) {
